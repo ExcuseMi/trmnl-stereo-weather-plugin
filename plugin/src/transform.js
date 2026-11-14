@@ -480,9 +480,10 @@ var pm = (opt && opt.prevMt) || {}, flag = (v, th, mg, was) => v === null || v =
 var uvOn = n.day !== false && flag(t.uvMax, 3, 0.5, pm.uv), co2Up = flag(M.inn.co2, 1401, 50, pm.co2);
 var relevant = { uv: uvOn, baro: false };
 var inUp = M.inn.temp !== null && M.inn.temp !== undefined, hum2 = inUp && M.inn.hum !== null && M.inn.hum !== undefined ? ['humidity'] : [];
-var ORD = inUp ? ['co2'].concat(hum2, RO_ORDER.filter((k) => k !== 'co2' && k !== hum2[0])) : co2Up ? ['wind', 'co2'].concat(RO_ORDER.filter((k) => k !== 'wind' && k !== 'co2')) : RO_ORDER;   // owner 2026-11-14: with an indoor reading the indoor group first (CO2, then indoor humidity with the outdoor humidity right after it), then the outdoor meters in the usual order; else as live: high indoor CO2 moves up
+var ORD = M.inn.main === false ? RO_ORDER : inUp ? ['co2'].concat(hum2, RO_ORDER.filter((k) => k !== 'co2' && k !== hum2[0])) : co2Up ? ['wind', 'co2'].concat(RO_ORDER.filter((k) => k !== 'wind' && k !== 'co2')) : RO_ORDER;   // owner 2026-11-14: with an indoor reading the indoor group first (CO2, then indoor humidity with the outdoor humidity right after it), then the outdoor meters in the usual order; else as live: high indoor CO2 moves up
 var keys = ORD.filter((k) => RO[k][2] && relevant[k] !== false);
 ORD.forEach((k) => { if (keys.length < 4 && keys.indexOf(k) < 0 && RO[k][2] && k !== 'uv') keys.push(k); });
+if (M.inn.main === false && RO.co2[2] && keys.indexOf('co2') < 0 && keys.length > 3) keys.splice(3, 1, 'co2');   // B13: with the outside reading main the sensor's CO2 meter is last, but it keeps a place
 keys = ORD.filter((k) => keys.indexOf(k) >= 0).slice(0, 4);
 var PRI = ORD;   // stacked views fill their meter rows in this order (owner 2026-11-12)
 var ZONES = { wind: [0.5, F_ ? 0.75 : 0.83], co2: [0.375, 0.625], pollen: [0.3, 0.6], aqi: [0.4, 0.6], uv: [3 / 11, 8 / 11] };   // warning zones, as live
@@ -518,7 +519,7 @@ var out = {
 ok: M.ok, meters: meters, cue: cueFor((() => { var ci = nowCueInput(opt && opt.hourly, M.hours, n, t.uvMax); if (ci.rain === null) ci.rain = wetIn12; return ci; })(), F_, opt && opt.prevCue),
 cond: (i18n.cond[n.code] || [])[n.day === false ? 1 : 0] || '', icon: wiUrl(n.icon, n.day), iconInk: wiInk(n.icon, n.day),
 temp: tStr, unit: deg + M.unit,   // owner 2026-11-13: no felt readout; the felt temperature drives the clothing cue only
-inn: inT === null ? null : { temp: t1(inT), out: O.outdoor, in: O.indoor, hum: M.inn.hum === null || hm ? '' : O.hum + ' ' + Math.round(M.inn.hum) + ' %' },
+inn: inT === null ? null : { temp: t1(inT), im: M.inn.main !== false, out: O.outdoor, in: O.indoor, hum: M.inn.hum === null || hm ? '' : O.hum + ' ' + Math.round(M.inn.hum) + ' %' },
 rain: wetIn12 ? { icon: wiUrl(R.type === 'snow' ? 'snow' : (R.type === 'hail' ? 'hail' : 'heavy'), true), hours: rainHours(M.hours, R), rows: rainRows(rainHours(M.hours, R)), gauge: gauge } : null,
 sun: sun, dry: wetIn12 ? null : sun,
 days: days.map((d, i) => ({ cue: cueFor(dayCueInput(opt && opt.hourly, daily, d0 + i), F_).slice(0, 3), name: names[i] || d.label, icon: wiUrl(d.icon, true), iconInk: wiInk(d.icon, true), lo: fmt(d.lo) + deg, hi: fmt(d.hi) + deg, loV: d.lo, hiV: d.hi, today: d0 === 0 && i === 0 })),
@@ -648,10 +649,13 @@ async function run(input) {
   // Real devices: the transform input has no sensor_readings (TRMNL adds them for the markup only). So the payload carries
   // ph, only the parts of the view that differ when an indoor reading exists: the markup merges them into ui and its page
   // script puts the real values in. Built from the view with a stand-in reading (the outdoor temperature, humidity 50).
+  // B13: another TRMNL's sensor (sensor_device_id), its label, and which reading is the main one (sensor_primary: auto = the sensor when it is this screen's own, outside when it comes from another device)
+  var sId = String(field(input, 'sensor_device_id', '')).replace(/\D/g, '').slice(0, 12), sLab = String(field(input, 'sensor_label', '')).replace(/[<>"'&{}%]/g, '').trim().replace(/\s+/g, ' ').toLocaleUpperCase(String(i18n.loc || 'en')), sPri = field(input, 'sensor_primary', 'auto'), sIm = sPri === 'sensor' || (sPri !== 'outside' && !sId);
+  if (Array.from(sLab).length > 12) { var sc12 = Array.from(sLab).slice(0, 13), sp = sc12.lastIndexOf(' '); sLab = sp >= 3 ? sc12.slice(0, sp).join('') : sc12.slice(0, 11).join('') + '\u2026'; }   // a long label: whole words up to 12 characters, else cut with an ellipsis
   var phTemp = model.now.temp, ph = null, showIn = field(input, 'sensor_show', 'show') !== 'hide', showCo = field(input, 'sensor_co2', 'show') !== 'hide';
   if ((showIn || showCo) && phTemp !== null && phTemp !== undefined) {
-    var stand = (co2, hum) => buildView(Object.assign({}, model, { inn: { temp: phTemp, hum: hum === undefined ? 50 : hum, co2: co2, press: null } }), i18n, w.daily, moon, phase, vo);
-    ph = showIn ? phOverlay(stand(null)) : {};
+    var stand = (co2, hum) => buildView(Object.assign({}, model, { inn: { temp: phTemp, hum: hum === undefined ? 50 : hum, co2: co2, press: null, main: sIm } }), i18n, w.daily, moon, phase, vo);
+    ph = showIn ? phOverlay(stand(null)) : {}; ph.id = sId; ph.im = sIm; ph.lab = sLab || null; ph.l8 = sLab.length > 8 ? sLab.slice(0, 7) + '.' : sLab;
     if (showIn) ph.hn = slimL(stand(null));   // the indoor order without CO2 (indoor humidity first)
     if (showCo) {   // the CO2 meter (B9): the meter list with a normal and with a high reading (key, label, idx, rank), the markup picks one by the real reading
       var lo = stand(800, showIn ? 50 : null), slim = slimL;

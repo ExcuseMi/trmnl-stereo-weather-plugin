@@ -134,9 +134,14 @@ test('time format: the setting decides, 24 h when missing, the TIME constant ove
   eq([T.timeIs12('24', '12'), T.timeIs12('12', '24')], [false, true], 'constant wins');
   const y = fs.readFileSync(path.join(__dirname, '../../plugin/src/settings.yml'), 'utf-8');
   const fields = y.split(/^- keyname: /m).slice(1).map((part) => ({ key: part.split('\n')[0], group: (/^  group: (.+)$/m.exec(part) || [])[1] || null }));
-  eq(fields.map((f) => f.key), ['author_info', 'lat_lon', 'unit', 'time_format', 'bottom', 'hide_title_bar', 'sensor_show', 'sensor_co2'], 'settings in owner order');
-  eq(fields.map((f) => f.group), [null, null, 'Display', 'Display', 'Display', 'Display', 'Sensor', 'Sensor'], 'settings groups');
-  ok(!/sensor_device/.test(y), 'owner 2026-11-14: a screen shows only its own sensor, no setting picks another device');
+  eq(fields.map((f) => f.key), ['author_info', 'lat_lon', 'unit', 'time_format', 'bottom', 'hide_title_bar', 'sensor_show', 'sensor_co2', 'sensor_device_id', 'sensor_label', 'sensor_primary'], 'settings in owner order (B13 settings added at the end, no existing key moved)');
+  eq(fields.map((f) => f.group), [null, null, 'Display', 'Display', 'Display', 'Display', 'Sensor', 'Sensor', 'Sensor', 'Sensor', 'Sensor'], 'settings groups');
+  // B13 (owner 2026-11-14) overrides 'a screen shows only its own sensor': an optional setting picks another TRMNL's sensor; empty keeps the own one
+  const part = (k) => y.split(/^- keyname: /m).slice(1).find((q) => q.startsWith(k + '\n'));
+  ['sensor_device_id', 'sensor_label', 'sensor_primary'].forEach((k) => ['description', 'description-de', 'description-fr', 'description-es-ES', 'description-nl', 'description-ja'].forEach((d) => ok(new RegExp('^  ' + d + ': .{20,}', 'm').test(part(k)), k + ' has ' + d)));
+  ok(/field_type: string/.test(part('sensor_device_id')) && /field_type: string/.test(part('sensor_label')) && !/default:/.test(part('sensor_device_id')) && !/default:/.test(part('sensor_label')), 'device id and label: optional text fields with no default (empty = own sensor, icon only)');
+  ok(/trmnl\.com/.test(part('sensor_device_id')) && /Leave empty/.test(part('sensor_device_id')), 'the device id description says where the number is and that empty means this screen');
+  ok(/- Automatic: auto\n  - Sensor: sensor\n  - Outside: outside\n  default: auto\n/.test(part('sensor_primary')), 'main reading: Automatic (default), Sensor, Outside');
   ok(/- 24 hours \(17:00\): '24'\n  - 12 hours \(5:00 PM\): '12'\n  default: '24'\n/.test(y) && /- Days: days\n  - Hours: hours\n  - Hours, days after 18:00: auto\n  default: auto\n/.test(y), 'time format 24 by default, bottom strip Days by default');
 });
 
@@ -615,6 +620,33 @@ async function sensorSettingsTests() {
       eq([both.ph, both.ui.inn], [null, null], 'both hidden: no overlay');
       for (const values of [{}, { sensor_show: 'show' }]) { const r = await run(values, false, null); eq([r.ph.inn.out, r.ph.inn.in, r.ph.tw.k, r.ui.inn], ['BUITEN', 'BINNEN', 'humidity', null]); }
     });
+    await check('B13: another TRMNL\'s sensor, label and main reading come from the settings into the overlay', async () => {
+      const d = await run({}, false, null);
+      eq([d.ph.id, d.ph.im, d.ph.lab, d.ph.inn.im], ['', true, null, true], 'defaults: this screen\'s sensor, sensor main, no label');
+      const own = await run({ sensor_label: ' living  room ' }, false, null);
+      eq([own.ph.id, own.ph.im, own.ph.lab, own.ph.l8], ['', true, 'LIVING ROOM', 'LIVING .'], 'own sensor with a label: still main, label upper case, spaces tidied, short form for the small views');
+      const rem = await run({ sensor_device_id: ' 2 ', sensor_label: 'Upstairs' }, false, null);
+      eq([rem.ph.id, rem.ph.im, rem.ph.inn.im, rem.ph.lab], ['2', false, false, 'UPSTAIRS'], 'another device: Automatic makes outside main');
+      for (const [pri, id, want] of [['auto', '', true], ['auto', '7', false], ['sensor', '', true], ['sensor', '7', true], ['outside', '', false], ['outside', '7', false], ['bogus', '7', false]]) {
+        eq((await run({ sensor_primary: pri, sensor_device_id: id }, false, null)).ph.im, want, 'sensor_primary ' + pri + (id ? ' with an id' : ' own sensor'));
+      }
+      eq((await run({ sensor_device_id: 'abc 12x3' }, false, null)).ph.id, '123', 'the id keeps its digits only');
+      const bad = await run({ sensor_label: '<b>"x"</b>&' }, false, null);
+      ok(!/[<>"'&]/.test(bad.ph.lab), 'no markup characters survive in the label: ' + bad.ph.lab);
+      const lg = await run({ sensor_label: 'Upstairs guest bedroom north wing' }, false, null), one = await run({ sensor_label: 'Abcdefghijklmnopqrstuvwxyz' }, false, null);
+      eq([lg.ph.lab, one.ph.lab.length, one.ph.lab.slice(-1)], ['UPSTAIRS', 12, '\u2026'], 'a long label: whole words up to 12 characters, a single long word cut with an ellipsis');
+      const hid = await run({ sensor_show: 'hide', sensor_device_id: '2' }, false, null);
+      eq([hid.ph.id, hid.ph.im], ['2', false], 'the id and main flag stay with the CO2 meter when the indoor reading is hidden');
+    });
+    await check('B13: with the outside reading main, the sensor\'s meters come after the outdoor ones (CO2 last, the twin humidity pair together)', async () => {
+      const so = await run({ sensor_device_id: '2' }, false, null), me = await run({}, false, null);
+      const k = (l) => l.map((m) => m.key);
+      eq(k(me.ph.mn)[0], 'co2', 'sensor main: CO2 first, as before');
+      eq(k(so.ph.mn).slice(-1), ['co2'], 'outside main: CO2 last');
+      ok(k(so.ph.hn).indexOf('humidity') >= 0 && k(so.ph.hn).indexOf('co2') < 0, 'the list without CO2 keeps the humidity twin');
+      eq(k(so.ph.mn).filter((x) => x !== 'co2'), k(me.ph.mn).filter((x) => x !== 'co2').sort((a, b) => k(so.ph.mn).indexOf(a) - k(so.ph.mn).indexOf(b)), 'the other meters keep one order');
+      eq(so.ph.tw.k, 'humidity', 'the humidity row is still the twin');
+    });
     await check('CO2 overlay (owner 2026-11-14): sensor_co2 show carries the meter list, hide carries none, independent of the indoor setting', async () => {
       const on = await run({}, false, null), off = await run({ sensor_co2: 'hide' }, false, null), only = await run({ sensor_show: 'hide' }, false, null);
       const slim = (l) => l.map((m) => Object.keys(m).sort().join());
@@ -816,7 +848,7 @@ test('2-bit active cells are the native dark grey, not black; 4-bit mid grey, to
 test('plugin name translated for the title bar when the instance name is the default (owner 2026-11-13)', () => {
   eq(['en-US', 'de', 'nl', 'fr-CA', 'ja', 'xx'].map((l) => T.buildI18n(l).ours.app), ['Radio Weather', 'Radiowetter', 'Radioweer', 'Radio Météo', 'ラジオ天気', 'Radio Weather']);
   const src = require('fs').readFileSync(require('path').join(__dirname, '../../plugin/src/shared.liquid'), 'utf8');
-  ok(/instance_name ?%\}\{% ?if sw_name == blank or sw_name == 'Radio Weather' ?%\}\{% ?assign sw_name ?= ?i18n\.ours\.app/.test(src), 'title bar uses i18n.ours.app when instance_name is the default');
+  ok(/instance_name ?%\}\{% ?if (\w+) == blank or \1 == 'Radio Weather' ?%\}\{% ?assign \1 ?= ?i18n\.ours\.app/.test(src), 'title bar uses i18n.ours.app when instance_name is the default');
 });
 
 test('no shown label falls back to English in any locale (item 38.1)', () => {

@@ -118,6 +118,43 @@ custom_fields:
   - Show: show
   - Hide: hide
   default: show
+- keyname: sensor_device_id
+  group: Sensor
+  field_type: string
+  name: Sensor from another TRMNL
+  description: 'Optional. To show the sensor of another TRMNL, enter that device''s number: the digits in the address of its page on trmnl.com (.../devices/1234). Leave empty to use this screen''s own sensor.'
+  description-de: 'Optional. Um den Sensor eines anderen TRMNL zu zeigen, gib die Nummer dieses Geräts ein: die Ziffern in der Adresse seiner Seite auf trmnl.com (.../devices/1234). Leer lassen, um den Sensor dieses Bildschirms zu nutzen.'
+  description-fr: 'Facultatif. Pour afficher le capteur d''un autre TRMNL, saisis le numéro de cet appareil : les chiffres dans l''adresse de sa page sur trmnl.com (.../devices/1234). Laisse vide pour utiliser le capteur de cet écran.'
+  description-es-ES: 'Opcional. Para mostrar el sensor de otro TRMNL, introduce el número de ese dispositivo: los dígitos de la dirección de su página en trmnl.com (.../devices/1234). Déjalo vacío para usar el sensor de esta pantalla.'
+  description-nl: 'Optioneel. Om de sensor van een andere TRMNL te tonen, vul het nummer van dat apparaat in: de cijfers in het adres van zijn pagina op trmnl.com (.../devices/1234). Laat leeg voor de sensor van dit scherm.'
+  description-ja: '任意。別のTRMNLのセンサーを表示するには、そのデバイスの番号（trmnl.comのデバイスページのアドレスにある数字、.../devices/1234）を入力します。空欄ならこの画面のセンサーを使います。'
+  placeholder: '1234'
+- keyname: sensor_label
+  group: Sensor
+  field_type: string
+  name: Sensor label
+  description: 'Optional. A short name for the sensor, for example Upstairs. It shows next to the house icon. Empty shows the icon alone.'
+  description-de: 'Optional. Ein kurzer Name für den Sensor, zum Beispiel Oben. Er steht neben dem Haus-Symbol. Leer zeigt nur das Symbol.'
+  description-fr: 'Facultatif. Un nom court pour le capteur, par exemple Étage. Il s''affiche à côté de l''icône de maison. Vide : l''icône seule.'
+  description-es-ES: 'Opcional. Un nombre corto para el sensor, por ejemplo Arriba. Se muestra junto al icono de la casa. Vacío muestra solo el icono.'
+  description-nl: 'Optioneel. Een korte naam voor de sensor, bijvoorbeeld Boven. Hij staat naast het huisje. Leeg toont alleen het huisje.'
+  description-ja: '任意。センサーの短い名前（例：2階）。家のアイコンの横に表示されます。空欄ならアイコンだけを表示します。'
+  placeholder: Upstairs
+- keyname: sensor_primary
+  group: Sensor
+  field_type: select
+  name: Main reading
+  description: 'Which reading is the big one, in black. Automatic: the sensor when it is this screen''s own, the outside weather when it comes from another TRMNL.'
+  description-de: 'Welcher Wert groß und schwarz erscheint. Automatisch: der Sensor, wenn es der eigene dieses Bildschirms ist, das Außenwetter, wenn er von einem anderen TRMNL kommt.'
+  description-fr: 'Quelle valeur est la grande, en noir. Automatique : le capteur s''il est celui de cet écran, la météo extérieure s''il vient d''un autre TRMNL.'
+  description-es-ES: 'Qué lectura es la grande, en negro. Automático: el sensor si es el de esta pantalla, el tiempo exterior si viene de otro TRMNL.'
+  description-nl: 'Welke waarde groot en zwart staat. Automatisch: de sensor als het die van dit scherm is, het buitenweer als hij van een andere TRMNL komt.'
+  description-ja: 'どちらの値を大きく黒で表示するか。自動：この画面のセンサーならセンサー、別のTRMNLのセンサーなら屋外の天気。'
+  options:
+  - Automatic: auto
+  - Sensor: sensor
+  - Outside: outside
+  default: auto
 name: Radio Weather
 description: Weather as a vintage radio receiver
 refresh_interval: 5
